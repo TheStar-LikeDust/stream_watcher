@@ -126,8 +126,8 @@ class ThreadWatcher(BaseWatcher, Thread):
                  check_callback_limit: int = 10,
                  image_callback_limit: int = 10,
                  **kwargs):
-        BaseWatcher.__init__(self, rtsp_connect, image_callback, check_callback, check_callback_limit,
-                             image_callback_limit, **kwargs)
+        BaseWatcher.__init__(self, rtsp_connect, image_callback, check_callback, image_callback_limit,
+                             check_callback_limit, **kwargs)
         self.barrier = ThreadBarrier(2)
 
     def exit_watcher(self):

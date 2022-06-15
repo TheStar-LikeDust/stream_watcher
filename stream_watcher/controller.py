@@ -3,15 +3,21 @@
 
 """
 import time
-import os, sys
 from logging import getLogger
-from threading import Thread
-from typing import Dict, Callable, Union
+from threading import Thread, Lock
+from typing import Dict, Callable, Union, NamedTuple
 
 from .watcher import ThreadWatcher, ProcessWatcher
 
 logger = getLogger(__name__)
 """日志类"""
+
+
+class WatcherInfo(NamedTuple):
+    watcher: Union[ThreadWatcher, ProcessWatcher]
+    """watcher实例"""
+    watcher_arguments: dict
+    """初始化此watcher的参数"""
 
 
 class WatcherController(Thread):
@@ -21,10 +27,12 @@ class WatcherController(Thread):
 
     """
 
-    registered_infos: Dict[str, dict]
-    """Watcher类的启动参数。"""
-    registered_watcher = Dict[str, Union[ThreadWatcher, ProcessWatcher]]
-    """保存Watcher类的字典。"""
+    registered_watcher_info: Dict[str, WatcherInfo] = None
+    """当前注册的watcher"""
+    check_cycle: int = 10
+    """检查周期"""
+    lock: Lock = Lock()
+    """同步锁"""
 
     def __init__(self, check_cycle: int = 10, **kwargs):
         """初始化时自动执行，并且固定为守护进程。
@@ -32,12 +40,11 @@ class WatcherController(Thread):
         Args:
             check_cycle (int, optional): 检查周期，间隔多少秒执行一次检查. Defaults to 10.
         """
+        self.check_cycle = check_cycle
+        self.registered_watcher_info = {}
+        self.lock = Lock()
 
         super(WatcherController, self).__init__(daemon=True, **kwargs)
-
-        self.registered_infos: Dict[str, dict] = {}
-        self.registered_watcher: Dict[str, Union[ThreadWatcher, ProcessWatcher]] = {}
-        self.check_cycle = check_cycle
         self.start()
 
     def run(self) -> None:
@@ -54,17 +61,15 @@ class WatcherController(Thread):
         while True:
             time.sleep(self.check_cycle)
 
-            for watcher_name, watcher in self.registered_watcher.items():
-                if not watcher.is_alive():
-                    logger.info(f'rebuilding.. {watcher_name}')
+            with self.lock:
+                for watcher_name, watcher_info in self.registered_watcher_info.items():
+                    if not watcher_info.watcher.is_alive():
+                        logger.info(f'rebuilding.. {watcher_name}')
 
-                    watcher_kwargs = self.registered_infos.pop(watcher_name)
-                    watcher = self.registered_watcher.pop(watcher_name)
-
-                    if isinstance(watcher, ThreadWatcher):
-                        self.register_thread_watcher(watcher_name, **watcher_kwargs)
-                    else:
-                        self.register_process_watcher(watcher_name, **watcher_kwargs)
+                        if isinstance(watcher_info.watcher, ThreadWatcher):
+                            self.register_thread_watcher(watcher_name, **watcher_info.watcher_arguments)
+                        else:
+                            self.register_process_watcher(watcher_name, **watcher_info.watcher_arguments)
 
     def register_thread_watcher(self,
                                 watcher_name: str,
@@ -86,8 +91,7 @@ class WatcherController(Thread):
         }
 
         watcher = ThreadWatcher(**watcher_kwargs)
-        self.registered_infos[watcher_name] = watcher_kwargs
-        self.registered_watcher[watcher_name] = watcher
+        self.registered_watcher_info[watcher_name] = WatcherInfo(watcher, watcher_kwargs)
 
         return watcher
 
@@ -111,20 +115,20 @@ class WatcherController(Thread):
         }
 
         watcher = ProcessWatcher(**watcher_kwargs)
-        self.registered_infos[str(watcher_name)] = watcher_kwargs
-        self.registered_watcher[str(watcher_name)] = watcher
+        self.registered_watcher_info[watcher_name] = WatcherInfo(watcher, watcher_kwargs)
 
         return watcher
 
     def exit_watcher(self, watcher_name: str):
-        """手动退出一个watcher"""
+        """手动退出一个watcher，此操作加锁"""
 
-        watcher = self.registered_watcher.get(watcher_name)
+        with self.lock:
+            watcher_info = self.registered_watcher_info.get(watcher_name)
 
-        if watcher:
-            watcher.exit_watcher()
-            self.registered_watcher.pop(watcher_name)
+            if watcher_info:
+                watcher_info.watcher.exit_watcher()
+                self.registered_watcher_info.pop(watcher_name)
 
     def __del__(self):
-        watcher = self.registered_watcher.values()
-        [_.exit_watcher() for _ in watcher]
+        watcher = self.registered_watcher_info.values()
+        [_.watcher.exit_watcher() for _ in watcher]
