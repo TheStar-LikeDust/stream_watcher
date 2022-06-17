@@ -1,7 +1,7 @@
 import unittest
 
 from stream_watcher.controller import WatcherController
-from tests.settings import test_rtsp_url
+from tests.config_for_test import test_rtsp_url
 
 
 def mock_callback(*args, **kwargs):

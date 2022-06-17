@@ -3,9 +3,11 @@
 
 from setuptools import setup, find_packages
 
+from stream_watcher import __version__
+
 setup(
     name='stream_watcher',
-    version='0.1',
+    version=__version__,
     keywords='Stream',
     description='A Pythonic way to manage streams in one file.',
     author='Logic',

@@ -2,7 +2,7 @@ import unittest
 
 from stream_watcher.watcher import ThreadWatcher
 
-from tests.settings import test_rtsp_url
+from tests.config_for_test import test_rtsp_url
 
 current_rtsp = test_rtsp_url
 
